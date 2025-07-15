@@ -1,0 +1,20 @@
+tolgee:
+  authentication:
+    enabled: true
+    initial-password: admin
+    initial-username: admin
+    jwt-secret: random_secret_with_exactly_512_characters
+  import:
+    base-language-tag: true
+    create-implicit-api-key: true
+    dir: /i18n
+    store-files-for-debugging: true
+  content-delivery:
+    public-url-prefix: https://example-bucket.s3.us-east-1.amazonaws.com/
+    storage:
+      s3:
+        access-key: example_access_key
+        bucket-name: example-bucket
+        endpoint: s3.us-east-1.amazonaws.com
+        secret-key: example_secret_key
+        signing-region: us-east-1

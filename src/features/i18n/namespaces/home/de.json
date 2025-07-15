@@ -1,0 +1,9 @@
+{
+  "nested": {
+    "deep": {
+      "label": "Beschriftung"
+    },
+    "test": "Verschachtelung testen"
+  },
+  "text": "Das ist die Startseite"
+}

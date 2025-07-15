@@ -1,0 +1,59 @@
+name: "nomey-next-local"
+
+volumes:
+  postgres_data:
+  meilisearch_data:
+  tolgee_data:
+  # redis_data:
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:latest
+    container_name: nomey-next-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-password}
+      POSTGRES_DB: ${PG_DATABASE:-nomey-next}
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Meilisearch service
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: nomey-next-meilisearch
+    environment:
+      MEILI_MASTER_KEY: ${MEILISEARCH_API_KEY}
+    ports:
+      - "${MEILI_PORT:-7700}:7700"
+    volumes:
+      - meilisearch_data:/meili_data
+    restart: unless-stopped
+
+  # Tolgee service
+  tolgee:
+    image: tolgee/tolgee:v3.122.1
+    container_name: nomey-next-tolgee
+    volumes:
+      - tolgee_data:/data
+      - ./src/i18n/namespaces:/i18n/nomey-local
+      - ./tolgee.config.yaml:/config.yaml
+    environment:
+      spring.config.additional-location: file:///config.yaml
+    ports:
+      - "${DOCKER_TOLGEE_DATABASE_PORT:-25432}:25432"
+      - "${DOCKER_TOLGEE_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  # Redis service
+  # redis:
+  #   image: redis:7
+  #   container_name: nomey-next-redis
+  #   ports:
+  #     - "${REDIS_PORT:-6379}:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   restart: unless-stopped

@@ -1,0 +1,6 @@
+{
+  "name": "@features/search",
+  "private": true,
+  "main": "./index.ts",
+  "types": "./index.ts"
+}

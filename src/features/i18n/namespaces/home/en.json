@@ -1,0 +1,9 @@
+{
+  "nested": {
+    "deep": {
+      "label": "Label"
+    },
+    "test": "Test nested"
+  },
+  "text": "This is home"
+}

@@ -1,0 +1,73 @@
+name: Lint & Test
+on: 
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  checks: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-and-test:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      # Checkout codebase
+      - uses: actions/checkout@v4
+      
+      # Cache dependencies
+      - uses: useblacksmith/cache@v5
+        id: npm-cache
+        with:
+          path: |
+            node_modules
+            ~/.npm
+          key: ${{ runner.os }}-frontend-${{ hashFiles('package-lock.json') }}
+      
+      # Install dependencies
+      - name: Install Dependencies
+        if: steps.npm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      # Ensure .env.test exists so we don't explode during lint/tests
+      # due to the T3 env.js validator. We have a test env in the repo
+      # but we need to ensure it is loaded correctly.
+      - name: Setup environment for tests
+        run: |
+          if [ ! -f ".env.test" ]; then
+            echo ".env.test file is missing! Aborting."
+            exit 1
+          fi
+          
+          # Use a more robust way to load environment variables that handles special characters
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            # Skip comments and empty lines
+            [[ "$line" =~ ^#.*$ ]] && continue
+            [[ -z "$line" ]] && continue
+            
+            # Extract variable name and value
+            var_name="${line%%=*}"
+            var_value="${line#*=}"
+            
+            # Remove quotes if present
+            var_value="${var_value%\"}"
+            var_value="${var_value#\"}"
+            
+            # Add to GitHub environment
+            echo "$var_name=$var_value" >> $GITHUB_ENV
+          done < .env.test
+      
+      # Lint and type check
+      - name: Lint and Type Check
+        run: npm run check
+      
+      # Format check
+      - name: Format Check
+        run: npm run format:check
+      
+      # Run tests with basic environment configuration
+      - name: Run Tests
+        run: npm run test
+        env:
+          NODE_ENV: test
