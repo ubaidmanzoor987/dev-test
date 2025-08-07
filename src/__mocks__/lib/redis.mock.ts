@@ -2,6 +2,7 @@ import { vi } from "vitest";
 import type { RedisClient } from "@/lib/redis/types";
 
 const redisBase: Partial<RedisClient> = {
+  ping: vi.fn().mockResolvedValue('PONG'),
   get: vi.fn().mockResolvedValue(null),
   set: vi.fn().mockResolvedValue("OK"),
   del: vi.fn().mockResolvedValue(1),

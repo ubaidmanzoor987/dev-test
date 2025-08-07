@@ -76,18 +76,26 @@ export async function POST(request: Request) {
   console.log("client and data", {clientId, data});
   
   try {
+    // if (clientId === 'broadcast') {
+    //   // Send to global channel
+    //   await redisService.publish(RedisService.getGlobalChannel(), message);
+    //   console.log('Published to global channel');
+    // } else {
+    //   // Send to recipient's channel
+    //   await redisService.publish(RedisService.getUserChannel(clientId), message);
+    //   console.log('Published to recipient channel:', clientId);
+      
+    //   // Also send to sender's channel for their own UI
+    //   await redisService.publish(RedisService.getUserChannel(session?.user?.id || ''), message);
+    //   console.log('Published to sender channel:', session.user.id);
+    // }
+
     if (clientId === 'broadcast') {
       // Send to global channel
       await redisService.publish(RedisService.getGlobalChannel(), message);
-      console.log('Published to global channel');
     } else {
-      // Send to recipient's channel
-      await redisService.publish(RedisService.getUserChannel(clientId), message);
-      console.log('Published to recipient channel:', clientId);
-      
-      // Also send to sender's channel for their own UI
-      await redisService.publish(RedisService.getUserChannel(session?.user?.id || ''), message);
-      console.log('Published to sender channel:', session.user.id);
+      // Send to specific user's channel
+      await redisService.publish(await RedisService.getSingleUserChannel(clientId), message);
     }
 
     return NextResponse.json({ success: true });

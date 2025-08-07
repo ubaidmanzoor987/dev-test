@@ -15,6 +15,10 @@ export async function getUploadUrl() {
     log.warn("User not authenticated when requesting upload URL");
     throw new Error("You must be signed in to upload videos");
   }
+  if (!session?.user?.id) {
+    log.warn("User not authenticated when requesting upload URL");
+    throw new Error("You must be signed in to upload videos");
+  }
 
   try {
     // Use your mux client to create an upload URL

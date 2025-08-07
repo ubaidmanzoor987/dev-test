@@ -89,7 +89,8 @@ export default function HomeClient({ userName, session }: HomeClientProps) {
         'X-User-ID': session.user.id
       },
       userId: session.user.id
-    }
+    },
+    { userId: session?.user?.id }
   );
 
   useEffect(() => {
@@ -207,7 +208,7 @@ console.log("messages in home", messages);
                 <div className={`h-2 w-2 rounded-full ${client.isActive ? 'bg-green-500' : 'bg-gray-500'}`} />
                 {client.userId === loggedInUserId 
                   ? 'You' 
-                  : client.userName || `User ${client.id.substring(0, 6)}`
+                  : client.userName || `User ${clientId && ` (${clientId.substring(0, 8)}...)`}`
                 }
               </button>
             ))}

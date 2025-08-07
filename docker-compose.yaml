@@ -4,7 +4,7 @@ volumes:
   postgres_data:
   meilisearch_data:
   tolgee_data:
-  # redis_data:
+  redis_data:
 
 services:
   # PostgreSQL database
@@ -49,11 +49,11 @@ services:
     restart: unless-stopped
 
   # Redis service
-  # redis:
-  #   image: redis:7
-  #   container_name: nomey-next-redis
-  #   ports:
-  #     - "${REDIS_PORT:-6379}:6379"
-  #   volumes:
-  #     - redis_data:/data
-  #   restart: unless-stopped
+  redis:
+    image: redis:7
+    container_name: nomey-next-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped

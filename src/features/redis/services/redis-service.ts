@@ -1,7 +1,8 @@
 import type { RedisClient } from "@/lib/redis/types";
-import type { SetCommandOptions } from "@upstash/redis";
 import type { RedisServiceType } from "../types";
-import { Redis } from '@upstash/redis';
+import { createClient, type RedisClientType, type RedisDefaultModules } from "redis";
+import { db } from "@/lib/db";
+import { env } from "@/env";
 
 /**
  * Redis service wrapper providing common Redis operations.
@@ -15,23 +16,98 @@ import { Redis } from '@upstash/redis';
  */
 export class RedisService implements RedisServiceType {
   private client: RedisClient;
-  private subscriber: Redis | null = null;
+  private subscriber: RedisClientType<RedisDefaultModules, any, any>;
   private messageHandlers: Map<string, (message: string) => void> = new Map();
+  private isConnected: boolean = false;
 
   /**
    * Creates a new RedisService instance.
    */
   constructor(client: RedisClient) {
     this.client = client;
+    this.subscriber = createClient({
+      socket: {
+        host: env.REDIS_HOST || 'localhost',
+        port: parseInt(env.REDIS_PORT || '6379'),
+      },
+      password: env.REDIS_PASSWORD,
+      database: parseInt(env.REDIS_DB || '0'),
+    });
   }
 
-  async createSubscriber(): Promise<Redis> {
-    if (!this.subscriber) {
-      this.subscriber = new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL!,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-      });
+  private async ensureConnected() {
+    if (this.isConnected) return true;
+    
+    try {
+      await this.client.ping();
+      this.isConnected = true;
+      return true;
+    } catch (error) {
+      console.error('Redis connection error:', error);
+      this.isConnected = false;
+      throw new Error('Failed to connect to Redis');
     }
+  }
+
+  async createSubscriber(): Promise<RedisClientType<RedisDefaultModules, any, any>> {
+    if (this.subscriber) return this.subscriber;
+    
+    const redisOptions = {
+      host: env.REDIS_HOST || 'localhost',
+      port: parseInt(env.REDIS_PORT || '6379'),
+      password: env.REDIS_PASSWORD,
+      db: parseInt(env.REDIS_DB || '0'),
+      retryStrategy: (times: number) => {
+        // Reconnect after 5 seconds
+        return Math.min(times * 100, 5000);
+      },
+      reconnectOnError: (err: Error) => {
+        const targetError = 'READONLY';
+        if (err.message.includes(targetError)) {
+          // Only reconnect when the error contains "READONLY"
+          return true;
+        }
+        return false;
+      }
+    };
+
+
+    // Connect to Redis
+    await this.subscriber.connect();
+
+    // Set up error handling
+    this.subscriber.on('error', (error: any) => {
+      console.error('Redis Subscriber Error:', error);
+      this.isConnected = false;
+    });
+
+    // Set up connection handling
+    this.subscriber.on('connect', () => {
+      console.log('Redis Subscriber connected');
+      this.isConnected = true;
+    });
+
+    // Wait for connection to be ready
+    await new Promise<void>((resolve, reject) => {
+      const onReady = () => {
+        this.subscriber?.removeListener('error', onError);
+        resolve();
+      };
+      
+      const onError = (err: Error) => {
+        this.subscriber?.removeListener('ready', onReady);
+        reject(err);
+      };
+
+      // If already connected resolve immediately
+      if (this.subscriber?.isReady) {
+        resolve();
+      } else {
+        this.subscriber?.once('ready', onReady);
+        this.subscriber?.once('error', onError);
+      }
+    });
+
     return this.subscriber;
   }
 
@@ -40,34 +116,59 @@ export class RedisService implements RedisServiceType {
     console.log('Subscribing to channel:', channel);
     const subscriber = await this.createSubscriber();
     this.messageHandlers.set(channel, onMessage);
-    
-    // Start polling for messages
-    const pollMessages = async () => {
-      try {
-        const message = await subscriber.lpop(channel);
-        if (message && typeof message === 'string') {
-          onMessage(message);
-        }
-      } catch (error) {
-        console.error('Error polling messages:', error);
+    subscriber.subscribe(channel, (error: any, count: any) => {
+      if (error) {
+        console.error('Error subscribing to channel:', error);
+      } else {
+        console.log(`Subscribed to channel ${channel}.`);
       }
-      setTimeout(pollMessages, 1000);
-    };
-    
-    pollMessages();
+    });
+    subscriber.on('message', (channel: string, message: string) => {
+      const handler = this.messageHandlers.get(channel);
+      if (handler) {
+        handler(message);
+      }
+    });
   }
   
   /** Unsubscribe from a Redis channel */
   async unsubscribe(channel: string): Promise<void> {
     if (this.subscriber) {
       this.messageHandlers.delete(channel);
-      this.subscriber = null;
+      this.subscriber.unsubscribe(channel, (error: any, count: any) => {
+        if (error) {
+          console.error('Error unsubscribing from channel:', error);
+        } else {
+          console.log(`Unsubscribed from channel ${channel}.`);
+        }
+      });
     }
   }
 
   /** Create a user-specific channel name */
-  static getUserChannel(userId: string): string {
-    return `user:${userId}:messages`;
+  static async getUserChannel(userId: string): Promise<string> {
+    try{
+      console.log(`user:${userId}:messages`);
+      await db.user.update({
+        where: { id: userId },
+        data: { channel: `user:${userId}:messages` },
+      });
+      return `user:${userId}:messages`;
+    } catch(err: any) {
+      return err;
+    }
+  }
+
+  static async getSingleUserChannel(userId: string): Promise<string> {
+    try{
+      console.log(`user:${userId}:messages`);
+      const user = await db.user.findUnique({
+        where: { id: userId },
+      });
+      return user?.channel || `user:${userId}:messages`;
+    } catch(err: any) {
+      return err;
+    }
   }
 
   /** Get the global channel name */
@@ -93,7 +194,7 @@ export class RedisService implements RedisServiceType {
   async setValue(
     key: string,
     value: string | number,
-    options?: SetCommandOptions,
+    options?: { [key: string]: string | number },
   ): Promise<string | number | null> {
     return this.client.set(key, value, options);
   }
@@ -145,7 +246,14 @@ export class RedisService implements RedisServiceType {
 
   /** Publish a message to a Redis channel. */
   async publish(channel: string, message: string): Promise<number> {
-    return this.client.publish(channel, message);
+    try {
+      await this.ensureConnected();
+      const result = await this.client.publish(channel, message);
+      return result;
+    } catch (error) {
+      console.error('Redis publish error:', error);
+      throw error;
+    }
   }
 
   // --------------------

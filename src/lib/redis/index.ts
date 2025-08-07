@@ -1,5 +1,6 @@
 import type { RedisClient } from "./types";
 import { env } from "@/env";
+import { createClient } from "redis";
 
 /**
  * Singleton pattern for Redis client
@@ -18,7 +19,7 @@ export async function getRedis(): Promise<RedisClient> {
   // Return existing client if already initialized
   if (redisClient) return redisClient;
 
-  redisClient = await createUpstashRedisClient();
+  redisClient = await createLocalRedisClient();
 
   return redisClient;
 }
@@ -29,37 +30,46 @@ export async function getRedis(): Promise<RedisClient> {
  * function to retrieve the cached client instead.
  * @returns {RedisClient} Redis client for Upstash Redis
  */
-export async function createUpstashRedisClient(): Promise<RedisClient> {
-  // Dynamically import Upstash Redis only in production
-  // This reduces bundle size for development and improves cold starts
-  const { Redis: UpstashRedis } = await import("@upstash/redis");
-  const upstash = new UpstashRedis({
-    url: env.UPSTASH_REDIS_REST_URL,
-    token: env.UPSTASH_REDIS_REST_TOKEN,
-  });
-
-  // Adapter pattern: Create a unified interface over the Upstash implementation
-  const client: RedisClient = {
-    get: (key) => upstash.get(key),
-    set: (key, value, options) => upstash.set(key, value, options),
-    del: (key) => upstash.del(key),
-    publish: (channel, message) => upstash.publish(channel, message),
-    scan: async (cursor, options) => {
-      const q = await upstash.scan(cursor, options);
-
-      return {
-        cursor: q[0],
-        keys:
-          typeof q[1]?.[0] === "string"
-            ? (q[1] as string[])
-            : (q[1] as { key: string; type: string }[]).map((k) => k.type),
-      };
+export async function createLocalRedisClient(): Promise<RedisClient> {
+    // Create a Redis client using node-redis for local/dev
+  const redisRaw = createClient({
+    socket: {
+      host: env.REDIS_HOST || "localhost",
+      port: parseInt(env.REDIS_PORT || "6379"),
     },
-    hget: (key, field) => upstash.hget(key, field),
-    hset: (key, field, value) => upstash.hset(key, { [field]: value }),
-    hdel: (key, field) => upstash.hdel(key, field),
-    hgetall: (key) => upstash.hgetall(key),
-    hexists: (key, field) => upstash.hexists(key, field),
+    password: env.REDIS_PASSWORD,
+    database: parseInt(env.REDIS_DB || "0"),
+  });
+  // Ensure connection is established
+  if (!redisRaw.isOpen) {
+    await redisRaw.connect();
+  }
+
+  const client: RedisClient = {
+    // Standard commands
+    get: (key) => redisRaw.get(key),
+    // Health check
+    ping: () => redisRaw.ping(),
+    set: (key, value, options) => redisRaw.set(key, value.toString(), options as any),
+    del: (key) => redisRaw.del(key),
+    publish: (channel, message) => redisRaw.publish(channel, message),
+    scan: async (cursor, options) => {
+      // node-redis SCAN returns [cursor, keys[]]
+      // @ts-ignore – types currently inaccurate
+      const [nextCursor, keys] = await redisRaw.scan(cursor.toString(), {
+        MATCH: options?.match,
+        COUNT: options?.count,
+      });
+      return { cursor: nextCursor, keys };
+    },
+    hget: (key, field) => redisRaw.hGet(key, field),
+    hset: (key, field, value) => redisRaw.hSet(key, field, value.toString()),
+    hdel: (key, field) => redisRaw.hDel(key, field),
+    hgetall: async (key) => {
+      const res = await redisRaw.hGetAll(key);
+      return Object.keys(res).length ? (res as any) : null;
+    },
+    hexists: (key, field) => redisRaw.hExists(key, field).then((exists) => exists ? 1 : 0),
   };
 
   return client;

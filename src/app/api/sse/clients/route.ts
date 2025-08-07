@@ -28,13 +28,14 @@ export async function GET(request: NextRequest) {
     const clients = Object.entries(activeUsersData).map(([userId, userData]: any) => {
         console.log("userData-1", userData);
         
-      const parsedData = JSON.parse(JSON.stringify(userData));
+      const parsedData = JSON.parse(userData);
+      console.log("parsedData-1", parsedData, parsedData.clientId, userData.clientId, parsedData.lastActive);
       return {
-        id: parsedData.clientId,
+        id: parsedData.clientId || userData.clientId,
         userId: userId,
-        userName: parsedData.userName,
+        userName: parsedData.userName || userData.userName,
         isActive: true,
-        lastActive: parsedData.lastActive
+        lastActive: parsedData.lastActive || userData.lastActive
       };
     });
 
@@ -46,11 +47,12 @@ export async function GET(request: NextRequest) {
     }
 // Get current user's status
     const currentUserData = activeUsersData[session.user.id];
+    console.log("log:currentUserData", currentUserData);
     const userStatus = currentUserData ? {
-      ...JSON.parse(JSON.stringify(currentUserData)),
+      ...JSON.parse(currentUserData),
       isActive: true
     } : null;
-
+    console.log("log:userStatus", {currentUserData, clients, userStatus});
     return NextResponse.json({
       clients,
       userStatus

@@ -95,14 +95,17 @@ export function useSSE(
   const connect = useCallback(() => {
     console.log('Connecting with options:', options);
     console.log('Current clientId:', clientIdRef.current);
-  
+    if (!clientIdRef.current) {
+      console.error('SSE: Cannot connect - client ID is not set');
+      return;
+    }
     if (eventSourceRef.current) {
       console.log('SSE: Connection exists:', eventSourceRef.current);
       return;
     }
   
     try {
-      const srcUrl = `${url}?clientId=${encodeURIComponent(clientIdRef.current || '')}`;
+      const srcUrl = `${url}?clientId=${encodeURIComponent(clientIdRef.current)}`;
       const eventSource = new EventSource(srcUrl, { withCredentials: true });
       eventSourceRef.current = eventSource;
       console.log('Created EventSource:', eventSource);
@@ -204,13 +207,31 @@ export function useSSE(
         clearTimeout(reconnectTimeoutRef.current);
       }
       
-      if (onDisconnect) {
-        onDisconnect();
-      }
+      // if (onDisconnect) {
+      //   onDisconnect();
+      // }
     };
   }, []); // Empty dependency array to run only once on mount
 
+  useEffect(() => {
+    // Only set the clientId if we have a userId
+    if (options.userId) {
+      clientIdRef.current = `client-${options.userId}`;
+      console.log('Client ID set to:', clientIdRef.current);
+    } else {
+      console.error('No userId provided for SSE connection');
+    }
   
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, [options.userId]); 
 
   // Function to send a message to the server
   const sendMessage = useCallback(

@@ -12,6 +12,7 @@ vi.mock("@upstash/redis", () => ({
     set: vi.fn().mockImplementation(() => Promise.resolve("OK")),
     del: vi.fn().mockImplementation(() => Promise.resolve(1)),
     publish: vi.fn().mockImplementation(() => Promise.resolve(1)),
+    ping: vi.fn().mockResolvedValue('PONG'),
   })),
 }));
 
@@ -24,6 +25,7 @@ vi.mock("ioredis", () => ({
     set: vi.fn().mockImplementation(() => Promise.resolve("OK")),
     del: vi.fn().mockImplementation(() => Promise.resolve(1)),
     publish: vi.fn().mockImplementation(() => Promise.resolve(1)),
+    ping: vi.fn().mockResolvedValue('PONG'),
   })),
 }));
 

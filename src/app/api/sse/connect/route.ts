@@ -77,7 +77,11 @@ export const dynamic = 'force-dynamic';
 //             message: 'Connection closed',
 //             timestamp: new Date().toISOString() 
 //           })}\n\n`);
+//           try {
 //           controller.close();
+//         } catch (_) {
+//           /* controller already closed */
+//         }
 //         } catch (error) {
 //           console.error('Error closing SSE connection:', error);
 //         }
@@ -168,14 +172,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const clientId = `client-${session.user.id}`;
   const redis = await getRedis();
   const redisService = new RedisService(redis);
-
+  const sessionUserId = session.user.id;
   // Store user session in Redis
   await redisService.hSet(
     'active_users',
-    session?.user?.id || '',
+    sessionUserId,
     JSON.stringify({
       clientId,
       userId: session.user.id,
@@ -200,29 +208,30 @@ export async function GET(request: NextRequest) {
       };
 
       // Handle Redis messages
-      const handleRedisMessage = (message: string) => {
+      const handleMessage = (message?: string) => {
+          if (typeof message !== 'string') return;
         try {
-          const parsedMessage = JSON.parse(message);
-          send(`event: message\ndata: ${JSON.stringify(parsedMessage)}\n\n`);
+          send(`event: message\ndata: ${message}\n\n`);
         } catch (error) {
           console.error('Error handling Redis message:', error);
         }
       };
 
       // Subscribe to channels
-      const userChannel = RedisService.getUserChannel(session?.user?.id || '');
-      console.log('Subscribing to user channel:', userChannel);
-      await redisService.subscribe(userChannel, handleRedisMessage);
-
-      // Subscribe to global channel
+      const userChannel = await RedisService.getUserChannel(sessionUserId);
       const globalChannel = RedisService.getGlobalChannel();
-      console.log('Subscribing to global channel:', globalChannel);
-      await redisService.subscribe(globalChannel, handleRedisMessage);
+
+      Promise.all([
+        redisService.subscribe(userChannel, handleMessage),
+        redisService.subscribe(globalChannel, handleMessage)
+      ]).catch(error => {
+        console.error('Error setting up Redis subscriptions:', error);
+      });
 
       // Send initial connection event
       send(`event: connected\ndata: ${JSON.stringify({ 
         clientId,
-        userId: session?.user?.id || '',
+        userId: sessionUserId,
         timestamp: new Date().toISOString()
       })}\n\n`);
 
@@ -244,14 +253,18 @@ export async function GET(request: NextRequest) {
         await redisService.unsubscribe(globalChannel);
         
         // Remove from active users
-        await redisService.hDel('active_users', session?.user?.id || '');
+        await redisService.hDel('active_users', sessionUserId);
         
         send(`event: close\ndata: ${JSON.stringify({ 
           message: 'Connection closed',
           timestamp: new Date().toISOString() 
         })}\n\n`);
         
-        controller.close();
+        try {
+          controller.close();
+        } catch (_) {
+          /* controller already closed */
+        }
       };
 
       request.signal.addEventListener('abort', cleanup);
