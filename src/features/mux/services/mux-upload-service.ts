@@ -4,7 +4,7 @@ export const muxUploadService = {
   createUploadUrl: async (userId: string) => {
     const result = await muxClient.createUploadUrl({
       userId: userId,
-      corsOrigin: process.env.NEXTAUTH_URL ?? "http://localhost:3000",
+      corsOrigin: process.env.NEXTAUTH_URL ?? "https://dac8b028329e.ngrok-free.app/",
     });
 
     return {
