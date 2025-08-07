@@ -1,17 +1,7 @@
-import { getSession, signOut } from "@/features/auth";
-import { WelcomeMessage } from "@/features/home";
+import { getSession } from "@/features/auth";
+import HomeClient from './HomeClient';
 
-const HomePage = async () => {
+export default async function HomePage() {
   const session = await getSession();
-
-  const handleSignOut = async () => {
-    "use server";
-    await signOut();
-  };
-
-  return (
-    <WelcomeMessage name={session?.user.name ?? ""} signOut={handleSignOut} />
-  );
-};
-
-export default HomePage;
+  return <HomeClient userName={session?.user?.name ?? null} session={session} />;
+}

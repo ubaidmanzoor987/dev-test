@@ -1,6 +1,7 @@
 import type { RedisClient } from "@/lib/redis/types";
 import type { SetCommandOptions } from "@upstash/redis";
 import type { RedisServiceType } from "../types";
+import { Redis } from '@upstash/redis';
 
 /**
  * Redis service wrapper providing common Redis operations.
@@ -14,6 +15,8 @@ import type { RedisServiceType } from "../types";
  */
 export class RedisService implements RedisServiceType {
   private client: RedisClient;
+  private subscriber: Redis | null = null;
+  private messageHandlers: Map<string, (message: string) => void> = new Map();
 
   /**
    * Creates a new RedisService instance.
@@ -22,6 +25,55 @@ export class RedisService implements RedisServiceType {
     this.client = client;
   }
 
+  async createSubscriber(): Promise<Redis> {
+    if (!this.subscriber) {
+      this.subscriber = new Redis({
+        url: process.env.UPSTASH_REDIS_REST_URL!,
+        token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+      });
+    }
+    return this.subscriber;
+  }
+
+  /** Subscribe to a Redis channel */
+  async subscribe(channel: string, onMessage: (message: string) => void): Promise<void> {
+    console.log('Subscribing to channel:', channel);
+    const subscriber = await this.createSubscriber();
+    this.messageHandlers.set(channel, onMessage);
+    
+    // Start polling for messages
+    const pollMessages = async () => {
+      try {
+        const message = await subscriber.lpop(channel);
+        if (message && typeof message === 'string') {
+          onMessage(message);
+        }
+      } catch (error) {
+        console.error('Error polling messages:', error);
+      }
+      setTimeout(pollMessages, 1000);
+    };
+    
+    pollMessages();
+  }
+  
+  /** Unsubscribe from a Redis channel */
+  async unsubscribe(channel: string): Promise<void> {
+    if (this.subscriber) {
+      this.messageHandlers.delete(channel);
+      this.subscriber = null;
+    }
+  }
+
+  /** Create a user-specific channel name */
+  static getUserChannel(userId: string): string {
+    return `user:${userId}:messages`;
+  }
+
+  /** Get the global channel name */
+  static getGlobalChannel(): string {
+    return 'global:messages';
+  }
   // --------------------
   // String / KV commands
   // --------------------
